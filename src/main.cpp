@@ -47,8 +47,10 @@ bool InitializeSystem() {
     }
     //系统清错
     NRC_ClearAllError();
+
     //默认使用大量程传感器
     NRC_SetBoolVar(5, 0);
+
     //限位报警复位
     NRC_SetBoolVar(4, 0);
 
@@ -59,10 +61,8 @@ bool InitializeSystem() {
     logger.log(std::string("[日志] 文件=") + log_file);
 
     signal(SIGINT, handle_sigint);
-    if (!init_force_sensor_mapping()) {
-        logger.log("[初始化] 初始化传感器地址失败\n");
-        return false;
-    }
+
+    if (!init_force_sensor_mapping()) {logger.log("[初始化] 初始化传感器地址失败\n");return false;}
     return true;
 }
 

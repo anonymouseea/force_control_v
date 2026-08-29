@@ -149,6 +149,7 @@ SensorData read_force_sensor_xiao() {
             r.mz - g_sensor_offset_xiao.mz};
 }
 
+//mcs世界坐标系 acs关节坐标系
 bool read_robot_full_state(MyRobotState& state) {
     NRC_Position mcs_position;
     NRC_Position acs_position;
@@ -178,6 +179,9 @@ bool perform_ik(NRC_Position& ref_acs, double x_m, double y_m, double z_m, doubl
     NRC_Position posMCS(NRC_COORD::NRC_MCS, x_m*1000.0, y_m*1000.0, z_m*1000.0, 3.14159, 0, rz_rad);
     return (NRC_MCStoACS(ref_acs, posMCS, res) == 0);
 }
+
+
+
 
 std::string MakeLogFileName() {
     int max_id = 0;
