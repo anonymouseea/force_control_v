@@ -131,7 +131,7 @@ bool stop_and_power_off(AsyncLogger& logger) {
 
 
 
-} // 匿名命名空间
+}
 
 void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
     Admittance4 controller({130.0, 130.0, 120.0, 5},
