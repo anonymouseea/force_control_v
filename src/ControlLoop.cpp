@@ -26,11 +26,11 @@ constexpr double SMALL_SENSOR_MOMENT_DEAD_ZONE = 0.2;
 constexpr double LARGE_SENSOR_FORCE_DEAD_ZONE = 2.0;
 constexpr double LARGE_SENSOR_MOMENT_DEAD_ZONE = 0.5;
 
-// 10HZ，若抖动继续jiang
+// 10HZ，若抖动继续将降低滤波系数
 constexpr double FORCE_FILTER_ALPHA = 0.06;
 
 // 允许进入导纳控制的最大平移力和旋转力矩。
-constexpr double MAX_CONTROL_FORCE = 80.0;
+constexpr double MAX_CONTROL_FORCE = 50.0;
 constexpr double MAX_CONTROL_MOMENT = 2.0;
 
 // 导纳速度上限m/s 弧度/s
