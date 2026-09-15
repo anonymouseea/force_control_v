@@ -72,7 +72,9 @@ int main()
     
     if (!InitializeSystem()) {logger.log("[初始化] 初始化系统失败，退出\n");return -1;}
     //增加了实时调度设置，确保控制循环的高精度执行
+    
     if (!setup_realtime()) {logger.log("[错误] 设置实时调度失败，程序退出\n");return -1;}
+
     RunControlLoop(logger, g_running);
     return 0;
 }
