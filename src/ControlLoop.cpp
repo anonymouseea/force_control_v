@@ -27,7 +27,7 @@ constexpr double LARGE_SENSOR_FORCE_DEAD_ZONE = 2.0;
 constexpr double LARGE_SENSOR_MOMENT_DEAD_ZONE = 0.5;
 
 // 10HZ，若抖动继续将降低滤波系数
-constexpr double FORCE_FILTER_ALPHA = 0.06;
+constexpr double FORCE_FILTER_ALPHA = 0.03;
 
 // 允许进入导纳控制的最大平移力和旋转力矩。
 constexpr double MAX_CONTROL_FORCE = 50.0;
@@ -216,6 +216,19 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
             // 伺服上使能。
             if (NRC_PowerOn() != 0) {logger.log("[错误] 伺服上使能失败\n");NRC_SetBoolVar(1, 0);clock_gettime(CLOCK_MONOTONIC, &next_p);continue;}
 
+            // 最后才开启关节跟踪。
+            const int open_result = NRC_RKG_Open(
+                {60, 60, 60, 60, 20, 20, 20},
+                {1500, 1500, 1500, 1500, 2000, 2000, 2000},
+                {2000, 2000, 2000, 2000, 2000, 2000, 2000});
+            if (open_result != 0) {
+                logger.log("[错误] 开启关节跟踪失败\n");
+                NRC_PowerOff();
+                NRC_SetBoolVar(1, 0);
+                clock_gettime(CLOCK_MONOTONIC, &next_p);
+                continue;
+            }
+            
             // 等待伺服真正进入运行状态。
             if (!wait_servo_enabled(std::chrono::milliseconds(1000))) {
                 logger.log("[错误] 等待伺服上使能超时\n");
@@ -225,6 +238,7 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
                 clock_gettime(CLOCK_MONOTONIC, &next_p);
                 continue;
             }
+
             /*读取当前机器人位姿*/
             if (!read_robot_full_state(init_s)) {logger.log("[错误] 读取机器人当前位置失败，取消开启力控\n");
                 NRC_PowerOff();
@@ -247,18 +261,7 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
             last_target_tool = {0,0,0,0};
             // 每次重新开启力控时，从零开始建立滤波状态。
             filtered_ft = SensorData{};
-            // 最后才开启关节跟踪。
-            const int open_result = NRC_RKG_Open(
-                {60, 60, 60, 60, 20, 20, 20},
-                {1500, 1500, 1500, 1500, 2000, 2000, 2000},
-                {2000, 2000, 2000, 2000, 2000, 2000, 2000});
-            if (open_result != 0) {
-                logger.log("[错误] 开启关节跟踪失败\n");
-                NRC_PowerOff();
-                NRC_SetBoolVar(1, 0);
-                clock_gettime(CLOCK_MONOTONIC, &next_p);
-                continue;
-            }
+
             // 初始化过程耗时较长，禁止追赶之前积压的控制周期。
             clock_gettime(CLOCK_MONOTONIC, &next_p);
         }
@@ -484,9 +487,10 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
 
         /*关节限位保护。*/ 
         if (target_joints[0] < -44 || target_joints[0] > 44 ||
-            target_joints[1] < -840 || target_joints[1] > 1148 ||
+            target_joints[1] < -820 || target_joints[1] > 1148 ||
             target_joints[2] < 5 || target_joints[2] > 848 ||
             target_joints[3] < -60 || target_joints[3] > 60) {
+            stop_and_power_off(logger);
             NRC_SetBoolVar(4, 1);
             NRC_SetBoolVar(1, 0);
             logger.log("[错误] 关节超限，关闭力控\n");
