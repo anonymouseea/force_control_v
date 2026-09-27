@@ -30,8 +30,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-std::atomic<bool> g_running{true};
-void handle_sigint(int) { g_running = false; }
+// 信号处理器只写退出标志，停机操作由主控制线程执行。
+volatile std::sig_atomic_t g_exit_requested = 0;
+void handle_sigint(int) { g_exit_requested = 1; }
 
 AsyncLogger logger;
 
@@ -61,6 +62,7 @@ bool InitializeSystem() {
     logger.log(std::string("[日志] 文件=") + log_file);
 
     signal(SIGINT, handle_sigint);
+    signal(SIGTERM, handle_sigint);
 
     if (!init_force_sensor_mapping()) {logger.log("[初始化] 初始化传感器地址失败\n");return false;}
     return true;
@@ -75,6 +77,5 @@ int main()
     
     if (!setup_realtime()) {logger.log("[错误] 设置实时调度失败，程序退出\n");return -1;}
 
-    RunControlLoop(logger, g_running);
-    return 0;
+    return RunControlLoop(logger, g_exit_requested) ? 0 : 1;
 }
