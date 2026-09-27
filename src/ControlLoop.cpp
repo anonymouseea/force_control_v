@@ -59,6 +59,7 @@ bool RunControlLoop(AsyncLogger& logger, const volatile std::sig_atomic_t& exit_
             const timespec fallback = {0, 10000000L};
             nanosleep(&fallback, NULL);
         }
+        //新增的控制周期间隔超限检测，避免因系统调度延迟导致的控制异常，如果有问题就注释掉
         if (machine.isRunning() && now - previous > std::chrono::milliseconds(ControlConfig::MAX_CONTROL_GAP_MS)) {
             machine.reportFault("[错误] 控制周期间隔超限，进入停机流程", now);
         }
