@@ -41,8 +41,8 @@ bool PressFitMode::begin(const MyRobotState& actual, const SensorData& force,
 bool PressFitMode::calculate(const MyRobotState& actual, NRC_Position& joints,
                             const SensorData& force, bool small, double now,
                             std::array<double, 7>& target, AsyncLogger& logger) {
-    if (small != small_) {
-        error_ = "下压与贴合过程中禁止切换传感器，请退出后切换";
+    if (small || small != small_) {
+        error_ = "下压及贴合仅允许大量程传感器，检测到量程切换";
         return false;
     }
     const PressPhase before = press_.phase();

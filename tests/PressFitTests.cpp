@@ -2,6 +2,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <limits>
+#include <string>
 
 void require(bool value, const char* reason) {
     if (!value) throw std::runtime_error(reason);
@@ -9,6 +10,11 @@ void require(bool value, const char* reason) {
 
 int main() {
     try {
+        PressFit small_sensor;
+        require(!small_sensor.begin(0, 0, 0, true), "小量程被允许进入下压");
+        require(std::string(small_sensor.error()) == "下压及贴合仅允许大量程传感器",
+                "小量程没有被量程限制拒绝");
+        require(!small_sensor.update(0.001, 0, 0), "拒绝小量程后仍继续下压计算");
         PressFit unconfigured;
         require(!unconfigured.begin(0, 0, 0, false), "未确认方向却允许自动下压");
         PressFit fit;

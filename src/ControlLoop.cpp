@@ -381,6 +381,12 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
         }
         if (!force_active) continue;
 
+        // 下压及贴合仅允许大量程。即使同拍释放下压输入，也先处理量程切换停机。
+        if (small && (press_requested || press.active())) {
+            stop("下压及贴合仅允许大量程传感器，检测到小量程选择");
+            continue;
+        }
+
         // 6. 读取本拍真实反馈；后续两个模式分支使用同一份位置和传感器数据。
         MyRobotState actual{};
         NRC_Position joints;

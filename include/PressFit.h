@@ -8,7 +8,6 @@ constexpr double TARGET_FORCE_N = 50.0;
 // 未确认时保持0，确认后填写+1或-1。0会拒绝进入下压模式。
 constexpr int DOWN_Z_SIGN = 0;
 constexpr int LARGE_CONTACT_FORCE_SIGN = 0;
-constexpr int SMALL_CONTACT_FORCE_SIGN = 0;
 constexpr double FORCE_TOLERANCE_N = 3.0;
 constexpr double MAX_FORCE_N = 80.0;
 constexpr double FILTER_ALPHA = 0.03;
@@ -32,8 +31,10 @@ enum class PressPhase { Idle, Pressing, Seated, Fault };
 class PressFit {
 public:
     bool begin(double now, double actual_z, double raw_fz, bool small) {
-        sign_ = small ? PressFitConfig::SMALL_CONTACT_FORCE_SIGN : PressFitConfig::LARGE_CONTACT_FORCE_SIGN;
-        return beginWithSigns(now, actual_z, raw_fz, PressFitConfig::DOWN_Z_SIGN, sign_);
+        // 入口再次限制量程，避免其他调用者使用小量程建立下压力。
+        if (small) return fail("下压及贴合仅允许大量程传感器");
+        return beginWithSigns(now, actual_z, raw_fz, PressFitConfig::DOWN_Z_SIGN,
+                              PressFitConfig::LARGE_CONTACT_FORCE_SIGN);
     }
     // 独立的方向入口方便离线测试，真机入口使用上面的集中配置。
     bool beginWithSigns(double now, double z, double force, int down, int contact) {
