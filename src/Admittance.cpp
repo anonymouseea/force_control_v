@@ -66,10 +66,8 @@ std::pair<Admittance4::Vec4, Admittance4::Vec4> Admittance4::update(const Vec4& 
 
         // 对导纳速度进行限幅，防止异常外力造成速度过大。
         const double velocity_limit = std::abs(max_velocity_[i]);
-        xdot_[i] = std::max(
-            -velocity_limit,
-            std::min(xdot_[i], velocity_limit));
-
+        
+        xdot_[i] = std::max(-velocity_limit,std::min(xdot_[i], velocity_limit));
         // 更新位置 x = x0 + v * dt
         // 对于第4维 (theta)，这里直接线性累加即可，无需旋转矩阵
         x_[i] += xdot_[i] * dt_;
