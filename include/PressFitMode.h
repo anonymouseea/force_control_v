@@ -1,25 +1,37 @@
 #pragma once
 
 #include "Admittance.h"
-#include "PressFit.h"
 #include "RobotUtils.h"
+#include "ForceControlParameters.h"
+#include "PressFit.h"
 
-// 负责下压及贴合目标计算。开关、启停、限位与发送由主循环统一处理。
+// 定义类型
+enum class PressAction { Normal, Entered, Released, Target, Fault };
+
 class PressFitMode {
 public:
     PressFitMode();
-    bool active() const { return press_.phase() != PressPhase::Idle; }
-    void reset();
-    bool begin(const MyRobotState& actual, const SensorData& force, bool small, double now);
-    bool calculate(const MyRobotState& actual, NRC_Position& joints,
-                   const SensorData& force, bool small, double now,
-                   std::array<double, 7>& target, AsyncLogger& logger);
-    const char* error() const { return error_; }
+    PressAction step(bool requested, bool small, bool new_session, bool rotation, double now,
+                     const MyRobotState& actual, NRC_Position& joints, const SensorData& force,
+                     std::array<double, 7>& target, AsyncLogger& logger);
+
 private:
-    PressFit press_;
+    //定义各个阶段
+    enum class Phase { Idle, Building, Holding };
+
+    void syncPlane(const MyRobotState& actual, const NRC_Position& joints);
+
+    Phase phase_ = Phase::Idle;
+
     Admittance4 controller_;
+
     MyRobotState origin_{};
+
     SensorData filtered_{};
-    bool small_ = false;
-    const char* error_ = "";
+
+    double start_ = 0, previous_ = 0, stable_since_ = -1;
+    double target_z_ = 0, filtered_fz_ = 0, entry_force_ = 0;
+    std::array<double, 4> locked_joints_{};
+    bool rotation_ = false;
+    bool plane_paused_ = false;
 };

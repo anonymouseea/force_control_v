@@ -14,6 +14,7 @@
 
 namespace {
 using namespace ForceControlParameters;
+
 constexpr double RAD_TO_DEG = 180.0 / 3.14159265358979323846;
 
 // ==================== 一、公共时间与数据检查 ====================
@@ -29,14 +30,17 @@ void waitCycle(timespec& next, bool force_on) {
         next.tv_nsec -= 1000000000L;
         ++next.tv_sec;
     }
+    //CLOCK_MONOTONIC为单调时钟id，TIMER_ABSTIME表示绝对时间，next为下一拍的绝对时间
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
 }
 
+//返回当前单调时钟的秒数，精度为小数点后若干位
 double monotonicSeconds() {
     return std::chrono::duration<double>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+//输入正确性判断
 bool validFeedback(const MyRobotState& state, const NRC_Position& joints,
                    const SensorData& force) {
     if (!std::isfinite(state.x) || !std::isfinite(state.y) ||
@@ -50,10 +54,11 @@ bool validFeedback(const MyRobotState& state, const NRC_Position& joints,
     }
     return true;
 }
-
+//关节限位
 bool withinLimits(const std::array<double, 7>& target) {
     const double lower[4] = {-44, -820, 5, -60};
     const double upper[4] = {44, 1148, 848, 60};
+    // 如果输入的目标关节位置不在规定的范围内，则返回false，否则返回true
     for (int axis = 0; axis < 4; ++axis) {
         if (!std::isfinite(target[axis]) ||
             target[axis] < lower[axis] || target[axis] > upper[axis]) {
@@ -64,9 +69,10 @@ bool withinLimits(const std::array<double, 7>& target) {
 }
 
 // ==================== 二、伺服启动与停止 ====================
-
+// 等待伺服状态为3，超时返回false,在1s内每10ms检查一次
 bool waitServoEnabled() {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+
     while (std::chrono::steady_clock::now() < deadline) {
         if (NRC_GetServoStatus() == 3) return true;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -74,23 +80,32 @@ bool waitServoEnabled() {
     return false;
 }
 
+/*等待机器人停稳，超时返回false,在3s内每10ms检查一次，首先判断机器人运行状态是否为0，
+然后判断当前关节位置是否稳定在一个参考位置附近，如果稳定则返回true，否则继续等待，直到超时
+同时waitRobotStopped这个也会作为后面其他函数的判断依赖*/
 bool waitRobotStopped() {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    NRC_Position reference;
     bool have_reference = false;
+    NRC_Position reference;
     auto stable_since = std::chrono::steady_clock::now();
+
     while (std::chrono::steady_clock::now() < deadline) {
         NRC_Position actual;
         bool valid = NRC_GetRobotRunStatus() == 0 &&
                      NRC_GetCurrentPos(NRC_COORD::NRC_ACS, actual) == 0;
-        if (valid) {
+
+        if (valid) 
+        {
             for (int axis = 0; axis < 4; ++axis) {
                 if (!std::isfinite(actual.pos[axis])) valid = false;
             }
         }
-        if (!valid) {
+        if (!valid) 
+        {
             have_reference = false;
-        } else {
+        } 
+        else 
+        {
             bool stable = have_reference;
             for (int axis = 0; axis < 4 && have_reference; ++axis) {
                 if (std::abs(actual.pos[axis] - reference.pos[axis]) > 0.01) stable = false;
@@ -99,8 +114,10 @@ bool waitRobotStopped() {
                 reference = actual;
                 stable_since = std::chrono::steady_clock::now();
                 have_reference = true;
-            } else if (std::chrono::steady_clock::now() - stable_since >=
-                       std::chrono::milliseconds(100)) {
+            } 
+            else if (std::chrono::steady_clock::now() - stable_since >=
+                       std::chrono::milliseconds(100)) 
+            {
                 return true;
             }
         }
@@ -146,12 +163,24 @@ bool startControl(AsyncLogger& logger, MyRobotState& initial, NRC_Position& join
         {60, 60, 60, 60, 20, 20, 20},
         {1500, 1500, 1500, 1500, 2000, 2000, 2000},
         {2000, 2000, 2000, 2000, 2000, 2000, 2000});
-    if (result != 0 || !waitServoEnabled() || !read_robot_full_state(initial) ||
-        NRC_GetCurrentPos(NRC_COORD::NRC_ACS, joints) != 0) {
-        logger.log("[错误] 开启跟踪、等待使能或初始位置读取失败，跟踪返回码=" +
-                   std::to_string(result) + "\n");
+    // 保留统一清理流程，但明确记录失败发生在哪一步。
+    const auto fail_start = [&](const std::string& reason) {
+        logger.log("[错误] " + reason + "\n");
         stopAndPowerOff(logger);
         return false;
+    };
+    if (result != 0) {
+        return fail_start("开启关节跟踪失败，返回码=" + std::to_string(result));
+    }
+    if (!waitServoEnabled()) {
+        return fail_start("等待伺服使能超时");
+    }
+    if (!read_robot_full_state(initial)) {
+        return fail_start("读取初始末端位姿失败");
+    }
+    const int position_result = NRC_GetCurrentPos(NRC_COORD::NRC_ACS, joints);
+    if (position_result != 0) {
+        return fail_start("读取初始关节位置失败，返回码=" + std::to_string(position_result));
     }
     return true;
 }
@@ -166,7 +195,8 @@ public:
                        MAX_ROTATION_VELOCITY}, 0.001) {}
 
     void reset(const MyRobotState& actual, const NRC_Position& joints,
-               bool rotation, bool small) {
+               bool rotation, bool small) 
+    {
         origin_ = actual;
         rotation_ = rotation;
         small_ = small;
@@ -174,7 +204,8 @@ public:
         lock_ = last_;
         lockJoints(joints);
         controller_.set_state(last_, {0, 0, 0, 0});
-        clearFilter();
+        // 同步导纳位置，清除速度和滤波历史。
+        clearVelocity();
     }
 
     void clearFilter() { filtered_ = SensorData{}; }
@@ -195,10 +226,10 @@ public:
         const double dead_f = small ? SMALL_SENSOR_FORCE_DEAD_ZONE : LARGE_SENSOR_FORCE_DEAD_ZONE;
         const double dead_m = small ? SMALL_SENSOR_MOMENT_DEAD_ZONE : LARGE_SENSOR_MOMENT_DEAD_ZONE;
         Admittance4::Vec4 input = {
-            filter(force.fx, filtered_.fx, dead_f, MAX_CONTROL_FORCE),
-            filter(force.fy, filtered_.fy, dead_f, MAX_CONTROL_FORCE),
-            filter(force.fz, filtered_.fz, dead_f, MAX_CONTROL_FORCE),
-            filter(force.mz, filtered_.mz, dead_m, MAX_CONTROL_MOMENT)
+            filterForceInput(force.fx, filtered_.fx, dead_f, MAX_CONTROL_FORCE),
+            filterForceInput(force.fy, filtered_.fy, dead_f, MAX_CONTROL_FORCE),
+            filterForceInput(force.fz, filtered_.fz, dead_f, MAX_CONTROL_FORCE),
+            filterForceInput(force.mz, filtered_.mz, dead_m, MAX_CONTROL_MOMENT)
         };
 
         // 双向模式切换沿用原坐标约定，将导纳状态同步到实际位姿。
@@ -245,13 +276,6 @@ public:
     }
 
 private:
-    static double filter(double raw, double& value, double dead_zone, double limit) {
-        value += FORCE_FILTER_ALPHA * (raw - value);
-        const double output = value > dead_zone ? value - dead_zone :
-                              (value < -dead_zone ? value + dead_zone : 0);
-        return std::max(-limit, std::min(output, limit));
-    }
-
     void lockJoints(const NRC_Position& actual) {
         for (int i = 0; i < 4; ++i) joints_lock_[i] = actual.pos[i];
     }
@@ -296,21 +320,21 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
     PressFitMode press;
     bool force_active = false;
     bool last_zero = false;
-    bool press_armed = false;
+    bool first_force_cycle = false;
+    bool previous_press = false;
     bool stop_failed = false;
     timespec next;
     resetCycle(next);
     std::thread feedback(feedbackLoop, std::ref(running));
-
+    
     // 所有运行期错误共用同一停机出口，避免超限后重复调用停止接口。
     auto stop = [&](const char* reason) {
         logger.log(std::string("[停机] ") + reason + "\n");
+        //示教器界面的按钮状态置为关闭
         NRC_SetBoolVar(1, 0);
         normal.clearVelocity();
         if (force_active) stop_failed = !stopAndPowerOff(logger);
         force_active = false;
-        press.reset();
-        press_armed = false;
         if (stop_failed) logger.log("[错误] 停机未完成，禁止重新启动，请检查控制器\n");
         resetCycle(next);
     };
@@ -318,41 +342,53 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
     while (running) {
         // 1. 周期等待，随后重新读取本拍开关，避免使用等待前的旧值。
         waitCycle(next, NRC_ReadBoolVar(1));
+        
         const bool force_on = NRC_ReadBoolVar(1);
+
         const int press_input = NRC_ReadDigInByBoard(1, 2);
+
         const int rotation_input = NRC_ReadDigInByBoard(1, 1);
+
         const bool zero_on = NRC_ReadBoolVar(2);
-        const bool zero_rising = zero_on && !last_zero;
-        last_zero = zero_on;
+        
+
+        // 小传感器触发
+        // 1 → 小量程传感器
+        // 0 → 大量程传感器
         const bool small = NRC_ReadBoolVar(5);
 
-        // 2. 检查输入与故障锁定。下压必须先观察到低电平才能启动。
+        // 查输入与故障锁定。每拍强制关闭力控开关、跳过本轮所有业务逻辑，
+        // 让程序进入"活着但什么都不做"的锁定状态，直到人工处理。
+        // 下压必须先观察到低电平才能启动。
         if (stop_failed) {
             NRC_SetBoolVar(1, 0);
             continue;
         }
-        if ((press_input != 0 && press_input != 1) ||
-            (rotation_input != 0 && rotation_input != 1)) {
-            stop("模式输入读取失败");
-            continue;
-        }
-        const bool press_requested = press_input == 1;
-        const bool rotation = rotation_input == 1;
-        if (!press_requested) press_armed = true;
-
-        // 3. 关闭请求优先处理，不会在请求关闭后再生成一拍目标。
+        // 与上force_active就不会关闭力控后每次重复停机
         if (!force_on && force_active) {
             stop("力控开关关闭");
             continue;
         }
 
-        // 4. 单独清零请求。下压输入有效或贴合过程中不允许改变传感器零点。
-        if (zero_rising) {
-            if (press_requested || press.active()) {
+
+        //比较press_input和1是否相等，如果相等，press_requested就返回1
+        const bool press_requested = press_input == 1;
+        const bool rotation = rotation_input == 1;
+
+        const bool releasing_press = previous_press && !press_requested;
+        previous_press = press_requested;
+
+
+        // 4. 下压输入有效或贴合过程中不允许改变传感器零点。
+        const bool zero_rising = zero_on && !last_zero;
+        last_zero = zero_on;
+        if (zero_rising) 
+        {
+            if (press_requested || releasing_press) {
                 logger.log("[下压] 下压和贴合期间禁止传感器清零\n");
             } else {
                 zero_force_sensor(logger);
-                normal.clearFilter();
+                normal.clearVelocity();
                 resetCycle(next);
             }
         }
@@ -362,11 +398,14 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
             if (press_requested) {
                 logger.log("[下压] 请先关闭下压输入，再开启力控\n");
                 NRC_SetBoolVar(1, 0);
-                press_armed = false;
                 continue;
             }
             MyRobotState initial{};
             NRC_Position initial_joints;
+            /*  
+                调用startControl函数，传入logger、initial和initial_joints参数，
+                如果返回false，则执行停机操作，并将stop_failed设置为true，重置循环并继续下一次循环
+            */
             if (!startControl(logger, initial, initial_joints)) {
                 NRC_SetBoolVar(1, 0);
                 // 启动失败后可能遗留硬件状态，禁止未经检查反复自动重试。
@@ -375,18 +414,15 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
                 continue;
             }
             normal.reset(initial, initial_joints, rotation, small);
-            press.reset();
+            first_force_cycle = true;
             force_active = true;
             resetCycle(next);
+            continue;  // 启动会阻塞，下一拍重新读取开关和实际反馈。
         }
+        // 如果力控没有启动，就跳过本轮后面的运动控制代码，进入下一轮循环
         if (!force_active) continue;
 
-        // 下压及贴合仅允许大量程。即使同拍释放下压输入，也先处理量程切换停机。
-        if (small && (press_requested || press.active())) {
-            stop("下压及贴合仅允许大量程传感器，检测到小量程选择");
-            continue;
-        }
-
+        
         // 6. 读取本拍真实反馈；后续两个模式分支使用同一份位置和传感器数据。
         MyRobotState actual{};
         NRC_Position joints;
@@ -395,46 +431,38 @@ void RunControlLoop(AsyncLogger& logger, std::atomic<bool>& running) {
             stop("读取实际位姿失败");
             continue;
         }
+
         const SensorData force = small ? read_force_sensor_xiao() : read_force_sensor_da();
         if (!validFeedback(actual, joints, force)) {
             stop("位置或力传感器数值无效");
             continue;
         }
 
-        // 7. 下压输入释放：从实际位置重建原模式状态，不自动抬升。
-        if (!press_requested && press.active()) {
-            press.reset();
-            normal.reset(actual, joints, rotation, small);
-            logger.log("[下压] 已退出并同步实际位置，恢复原模式，不自动抬升\n");
-            resetCycle(next);
-            continue;
-        }
-
-        // 8. 计算目标：下压优先；否则执行原位置或末端自转模式。
+        // 7. 一次调用处理下压的进入、建压、贴合和退出。普通模式仍走原计算。
         std::array<double, 7> target{};
-        if (press_requested) {
-            if (NRC_GetServoStatus() != 3) {
-                stop("下压时伺服未处于运行状态");
-                continue;
-            }
-            if (!press.active()) {
-                if (!press_armed || !press.begin(actual, force, small, monotonicSeconds())) {
-                    stop(press_armed ? press.error() : "下压输入需要先关闭再打开");
-                    continue;
-                }
-                press_armed = false;
-                normal.clearVelocity();
-                logger.log("[下压] 建立目标力，锁定水平位置与姿态\n");
-                resetCycle(next);
-                continue;
-            }
-            if (!press.calculate(actual, joints, force, small, monotonicSeconds(), target, logger)) {
-                stop(press.error());
-                continue;
-            }
-        } else if (!normal.calculate(actual, joints, force, rotation, small, target, logger)) {
-            stop("位置模式逆解失败");
+        const PressAction action = press.step(press_requested, small, first_force_cycle, rotation, monotonicSeconds(),
+                                              actual, joints, force, target, logger);
+        first_force_cycle = false;
+
+        switch (action) {
+        case PressAction::Fault:
+            stop("下压模式故障，详见上条日志");
             continue;
+        case PressAction::Entered:
+            normal.clearVelocity();
+            continue;
+        case PressAction::Released:
+            normal.reset(actual, joints, rotation, small);
+            logger.log("[下压] 已退出，从实际位置恢复普通模式，不自动抬升\n");
+            continue;
+        case PressAction::Normal:
+            if (!normal.calculate(actual, joints, force, rotation, small, target, logger)) {
+                stop("位置模式逆解失败");
+                continue;
+            }
+            break;
+        case PressAction::Target:
+            break;
         }
 
         // 9. 所有模式统一检查关节限位，再发送目标；失败时走统一停机出口。

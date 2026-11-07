@@ -1,4 +1,7 @@
 #include "RobotUtils.h"
+#include "ForceControlParameters.h"
+
+#include <algorithm>
 
 #include <cmath>
 #include <chrono>
@@ -22,6 +25,14 @@ static unsigned char* g_force_ptrsxiao[6] = {nullptr};
 static bool g_is_sensor_ready = false;
 static SensorData g_sensor_offset = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 static SensorData g_sensor_offset_xiao = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+// 这里只复用计算，不保存静态滤波状态；调用方通过引用传入各自历史值。
+double filterForceInput(double raw, double& filtered, double dead_zone, double limit) {
+    filtered += ForceControlParameters::FORCE_FILTER_ALPHA * (raw - filtered);
+    const double output = filtered > dead_zone ? filtered - dead_zone :
+                          (filtered < -dead_zone ? filtered + dead_zone : 0);
+    return std::max(-limit, std::min(output, limit));
+}
 
 bool setup_realtime() {
     if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
